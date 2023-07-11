@@ -159,9 +159,13 @@ static FLAC__bool test_stream_encoder(Layer layer, FLAC__bool is_ogg)
 	FILE *file = 0;
 	FLAC__int32 samples[1024];
 	FLAC__int32 *samples_array[1];
+	FLAC__int16 samples16[1024];
+	FLAC__int16 samples16_array[1];
+
 	uint32_t i;
 
 	samples_array[0] = samples;
+	samples16_array[0] = samples16;
 
 	printf("\n+++ libFLAC unit test: FLAC__StreamEncoder (layer: %s, format: %s)\n\n", LayerString[layer], is_ogg? "Ogg FLAC":"FLAC");
 
@@ -468,8 +472,10 @@ static FLAC__bool test_stream_encoder(Layer layer, FLAC__bool is_ogg)
 	}
 
 	/* init the dummy sample buffer */
-	for(i = 0; i < sizeof(samples) / sizeof(FLAC__int32); i++)
+	for(i = 0; i < sizeof(samples) / sizeof(FLAC__int32); i++) {
 		samples[i] = i & 7;
+		samples16[i] = i & 7;
+	}
 
 	printf("testing FLAC__stream_encoder_process()... ");
 	if(!FLAC__stream_encoder_process(encoder, (const FLAC__int32 * const *)samples_array, sizeof(samples) / sizeof(FLAC__int32)))
@@ -478,6 +484,11 @@ static FLAC__bool test_stream_encoder(Layer layer, FLAC__bool is_ogg)
 
 	printf("testing FLAC__stream_encoder_process_interleaved()... ");
 	if(!FLAC__stream_encoder_process_interleaved(encoder, samples, sizeof(samples) / sizeof(FLAC__int32)))
+		return die_s_("returned false", encoder);
+	printf("OK\n");
+
+	fprintf(stderr, "testing FLAC__stream_encoder_process_interleaved_buf16()... \n");
+	if(!FLAC__stream_encoder_process_interleaved_buf16(encoder, samples16, sizeof(samples16) / sizeof(FLAC__int16)))
 		return die_s_("returned false", encoder);
 	printf("OK\n");
 

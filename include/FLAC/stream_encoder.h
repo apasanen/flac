@@ -1827,6 +1827,7 @@ FLAC_API FLAC__bool FLAC__stream_encoder_process(FLAC__StreamEncoder *encoder, c
  *    went wrong.
  */
 FLAC_API FLAC__bool FLAC__stream_encoder_process_interleaved(FLAC__StreamEncoder *encoder, const FLAC__int32 buffer[], uint32_t samples);
+FLAC_API FLAC__bool FLAC__stream_encoder_process_interleaved_buf16(FLAC__StreamEncoder *encoder, const FLAC__int16 buffer[], uint32_t samples);
 
 /* \} */
 

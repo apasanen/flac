@@ -313,6 +313,13 @@ static void append_to_verify_fifo_interleaved_(
 	uint32_t channels,
 	uint32_t wide_samples
 );
+static void append_to_verify_fifo_interleaved_buf16_(
+	verify_input_fifo *fifo,
+	const FLAC__int16 input[],
+	uint32_t input_offset,
+	uint32_t channels,
+	uint32_t wide_samples
+);
 
 static FLAC__StreamDecoderReadStatus verify_read_callback_(const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes, void *client_data);
 static FLAC__StreamDecoderWriteStatus verify_write_callback_(const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame, const FLAC__int32 * const buffer[], void *client_data);
@@ -2314,6 +2321,53 @@ FLAC_API FLAC__bool FLAC__stream_encoder_process_interleaved(FLAC__StreamEncoder
 	do {
 		if(encoder->protected_->verify)
 			append_to_verify_fifo_interleaved_(&encoder->private_->verify.input_fifo, buffer, j, channels, flac_min(blocksize+OVERREAD_-encoder->private_->current_sample_number, samples-j));
+
+			/* "i <= blocksize" to overread 1 sample; see comment in OVERREAD_ decl */
+		for(i = encoder->private_->current_sample_number; i <= blocksize && j < samples; i++, j++) {
+			for(channel = 0; channel < channels; channel++){
+				if(buffer[k] < sample_min || buffer[k] > sample_max){
+					encoder->protected_->state = FLAC__STREAM_ENCODER_CLIENT_ERROR;
+					return false;
+				}
+				encoder->private_->integer_signal[channel][i] = buffer[k++];
+			}
+		}
+		encoder->private_->current_sample_number = i;
+		/* we only process if we have a full block + 1 extra sample; final block is always handled by FLAC__stream_encoder_finish() */
+		if(i > blocksize) {
+			if(!process_frame_(encoder, /*is_last_block=*/false))
+				return false;
+			/* move unprocessed overread samples to beginnings of arrays */
+			FLAC__ASSERT(i == blocksize+OVERREAD_);
+			FLAC__ASSERT(OVERREAD_ == 1); /* assert we only overread 1 sample which simplifies the rest of the code below */
+			for(channel = 0; channel < channels; channel++)
+				encoder->private_->integer_signal[channel][0] = encoder->private_->integer_signal[channel][blocksize];
+			encoder->private_->current_sample_number = 1;
+		}
+	} while(j < samples);
+
+	return true;
+}
+
+
+FLAC_API FLAC__bool FLAC__stream_encoder_process_interleaved_buf16(FLAC__StreamEncoder *encoder, const FLAC__int16 buffer[], uint32_t samples)
+{
+	uint32_t i, j, k, channel;
+	const uint32_t channels = encoder->protected_->channels, blocksize = encoder->protected_->blocksize;
+	const FLAC__int32 sample_max = INT32_MAX >> (32 - encoder->protected_->bits_per_sample);
+	const FLAC__int32 sample_min = INT32_MIN >> (32 - encoder->protected_->bits_per_sample);
+
+	FLAC__ASSERT(0 != encoder);
+	FLAC__ASSERT(0 != encoder->private_);
+	FLAC__ASSERT(0 != encoder->protected_);
+
+	if(encoder->protected_->state != FLAC__STREAM_ENCODER_OK)
+		return false;
+
+	j = k = 0;
+	do {
+		if(encoder->protected_->verify)
+			append_to_verify_fifo_interleaved_buf16_(&encoder->private_->verify.input_fifo, buffer, j, channels, flac_min(blocksize+OVERREAD_-encoder->private_->current_sample_number, samples-j));
 
 			/* "i <= blocksize" to overread 1 sample; see comment in OVERREAD_ decl */
 		for(i = encoder->private_->current_sample_number; i <= blocksize && j < samples; i++, j++) {
@@ -4528,6 +4582,23 @@ void append_to_verify_fifo_(verify_input_fifo *fifo, const FLAC__int32 * const i
 }
 
 void append_to_verify_fifo_interleaved_(verify_input_fifo *fifo, const FLAC__int32 input[], uint32_t input_offset, uint32_t channels, uint32_t wide_samples)
+{
+	uint32_t channel;
+	uint32_t sample, wide_sample;
+	uint32_t tail = fifo->tail;
+
+	sample = input_offset * channels;
+	for(wide_sample = 0; wide_sample < wide_samples; wide_sample++) {
+		for(channel = 0; channel < channels; channel++)
+			fifo->data[channel][tail] = input[sample++];
+		tail++;
+	}
+	fifo->tail = tail;
+
+	FLAC__ASSERT(fifo->tail <= fifo->size);
+}
+
+void append_to_verify_fifo_interleaved_buf16_(verify_input_fifo *fifo, const FLAC__int16 input[], uint32_t input_offset, uint32_t channels, uint32_t wide_samples)
 {
 	uint32_t channel;
 	uint32_t sample, wide_sample;
